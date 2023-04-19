@@ -1,0 +1,430 @@
+---
+title: "EDA"
+author: "Brian Bombasi"
+date: "03/29/2023"
+output: 
+   html_document:
+    theme: readable
+    number_sections: yes
+    toc: yes
+    fig_width: 15
+    fig_height: 10
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(tidyverse)
+library(janitor)
+library(plotly)
+library(ggfortify)
+library(cluster)
+library(ggpubr)
+library(factoextra)
+library(readxl)
+library(DataExplorer)
+library(gt)
+library(ggfortify)
+library(margins)
+library(dplyr)
+```
+
+# Read and Combine Data
+```{r cars}
+Customer <-read.csv("Customer.csv")
+Sales <- read.csv(file = "Sales.csv")
+df <- merge(Customer, Sales, by="CUSTOMER_NUMBER_BLINDED")
+```
+# Data Features
+```{r}
+data_list <- list(Customer, Sales)
+
+# create a new column with the total sum of invoice prices per customer
+df$TOTAL_PROFIT <- ave(df$GROSS_PROFIT_DEAD_NET, df$CUSTOMER_NUMBER_BLINDED, FUN = sum)
+
+#Profitable logic
+df$PROFITABLE <- ifelse(df$TOTAL_PROFIT > 0, 1, 0)
+
+# create a new column with the total sum of invoice prices per customer
+df$TOTAL_INVOICES <- ave(df$INVOICE_PRICE, df$CUSTOMER_NUMBER_BLINDED, FUN = sum)
+```
+
+# Business Problem
+Swire Coca-Cola wants to predict the profitability and success of new local B2B restaurants and the profitability and risk factor of current customers(quick service, restaurants, retails and etc) to make informed decisions on pricing and funding. Our team will use historical data and machine learning techniques to build a predictive model that identifies profitable restaurant types and how long it takes for both new and old customers to become profitable. 
+The project will provide Swire Coca-Cola with insight on their current market, demands for each product and different customer segments.Our team also hope to provide Swire Coca-Cola with findings regarding customer profitability and what factors contribute towards a customer's success and which reasons create risk for Swire.
+
+
+# Analytic objective
+To create a predictive model that would highlight key indicators of success for Swire's customers(b2b businesses and etc). This would help Swire identify and target potentially successful businesses and create a long lasting partnership. We that this would also identify key aspects of a risky businesses.
+We also want to deliver a model that would predict profitability based on discounts given. By doing so we hope to show that certain levels of discounts towards customers(both successful and risky ventures) play a part in the business's profitability in the long run.Our team will test out a variety of target variables to see which target variable has better predictability when it comes to a customer's profitability. 
+
+I will create a new column called Profitable. It will be a binary variable of 1,0 or Profitable, not profitable and I will use several predicting variables to determine the customer's probability of being a profitable business venture for Swire. 
+
+As the semester goes on, Our team will conduct several different analysis along side the predicted model that was stated above. As we continue with the project, we hope gain a deeper understanding of the factors that affect Swire Coca-Cola's business in order to deliver a more accurate analysis at the end of the semester.
+
+# Questions
+
+Customer Segments
+-Where do we have the most success?
+-Where do we have the most customers? 
+-Which customer category do we serve more? which customer category do we serve the least? 
+-Which type of customers should be focused on?
+-When do we consider a customer inactive? or lost?
+-What is the distribution of the Profitable column? How many businesses are profitable and how many are not?
+-What are the characteristics of the businesses that Swire has partnered with in the past? Are there any common traits or patterns that successful businesses tend to exhibit?
+
+Products
+-Which cold drink channel should we target the most? 
+-Which Items are most in demand?
+-Is the demand for low calorie drinks increasing?
+
+Discounts
+-Whats the average discount per order?
+-How can we distinguish if a discount has had an effect on a customer's success?
+-What is our point of diminishing returns when it comes to discounts?
+
+# EDA
+Based on this, we see that Draper, UT has the most concentration of customers(business), followed by Tempe, AZ and Wilsonville OR.
+
+I want to find out more what makes these three regions such high density regions for Swire customers. Are all of them successful? how can we differentiate each business to know what factors identify them as success/profit for Swire, or risk.
+```{r}
+ggplot(Customer, aes(x = SALES_OFFICE_DESCRIPTION)) +
+    geom_bar(fill="#f68060", alpha=.6, width=.6) + coord_flip() +  theme_bw() + ggtitle("Where do we have the most customers?") + xlab("Region")
+
+#arranged plot bar
+plot_bar(Customer$SALES_OFFICE_DESCRIPTION, nrow = 1, ncol = 1)
+```
+We can see here that most of the customers come out as a profitable venture for Swire. the question is, how long does it take for a customer to be considered a profitable partnership? I think it is important to understand the factors that play into the customer's lifetime value. For example, bigger businesses would probably become profitable faster than small business. I will Assume 2 years for big business and 3 for smaller businesses. I want to know whether discount, county or even state locations have an effect on that. 
+```{r}
+plot_bar(df$PROFITABLE, nrow = 1, ncol = 1)
+```
+# Distribution of Profitability
+In this plot we can see that Phoenix AR has the highest distribution of profits. Which arise the question, are people in Arizona drinking more soda or coca cola products as compared to other states/cities? or are the retail stores in Phoenix just ordering more than the other state/cities? How big are the businesses in Arizona?
+```{r}
+# Filter the data to the top 20 most profitable cities
+top_cities <- df %>% 
+  group_by(ADDRESS_CITY) %>% 
+  summarize(TOTAL_PROFIT = sum(GROSS_PROFIT_DEAD_NET)) %>% 
+  arrange(desc(TOTAL_PROFIT)) %>% 
+  top_n(20, TOTAL_PROFIT) %>% 
+  pull(ADDRESS_CITY)
+
+df_filtered <- df %>% 
+  filter(ADDRESS_CITY %in% top_cities)
+
+# Create a histogram of the profitable sales by city
+ggplot(df_filtered, aes(x = reorder(ADDRESS_CITY, -PROFITABLE), fill = PROFITABLE)) +
+  stat_count(position = "dodge") +
+  scale_fill_manual(values = c("blue", "red")) +
+  ylab("City") +
+  xlab("Count") +
+  ggtitle("Distribution of Profitable Sales by City") +
+  scale_x_discrete(limits = rev(top_cities)) +
+  theme(axis.text.y = element_text(size = 8, angle = 0, hjust = 1)) +
+  coord_flip()
+
+```
+
+# Total discount per city
+It is quite interesting that Phoenix has the highest distribution of discount and profit.
+```{r}
+# Summarize the total discount per city and select the top 20
+total_discount_per_city <- df %>%
+  group_by(ADDRESS_CITY) %>%
+  summarize(total_discount = sum(DISCOUNT)) %>%
+  arrange(desc(total_discount)) %>%
+  head(20)
+
+# Print the top 20 cities by total discount
+total_discount_per_city
+
+# Create a bar plot of the top 20 cities by total discount
+ggplot(total_discount_per_city, aes(x = reorder(ADDRESS_CITY, -total_discount), y = total_discount)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(title = "Top 20 Cities by Total Discount", x = "City", y = "Total Discount") +
+  coord_flip()
+
+```
+# Correlation between Profitability and Discount.
+Since the value is positive, it suggests that as the discount amount increases, there is a slight increase in the probability of a customer being profitable. However, Since the correlation value is very small it may not be statistically significant
+```{r}
+# Calculate the correlation between PROFITABLE and DISCOUNT
+correlation <- cor(df$PROFITABLE, df$DISCOUNT)
+
+# Print the correlation value
+correlation
+
+```
+# Profitable and Sales States
+```{r}
+# Count the number of PROFITABLE customers by SALES_OFFICE_DESCRIPTION
+table(df$PROFITABLE, df$SALES_OFFICE_DESCRIPTION)
+```
+
+```{r}
+# Subset the data to only include profitable customers
+df_profitable <- df[df$PROFITABLE == "1", ]
+
+# Create a table of counts by sales office description
+df_count <- table(df_profitable$SALES_OFFICE_DESCRIPTION)
+
+# Convert the table to a data frame
+df_count <- data.frame(OFFICE_DESCRIPTION = names(df_count), COUNT = as.numeric(df_count))
+
+# Sort the data frame by count in descending order
+df_count <- df_count[order(df_count$COUNT, decreasing = TRUE), ]
+
+# Plot a stacked bar chart of counts by sales office description
+ggplot(df_count, aes(x = OFFICE_DESCRIPTION, y = COUNT, fill = "Profitable")) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("Profitable" = "blue")) +
+  labs(title = "Count of Profitable Customers by Sales Office Description", x = "Sales Office Description", y = "Count") + coord_flip()
+
+```
+# Which city has the largest average number of transaction?
+I want to find out which cities have the highest number of average transactions. I want to know if that will have an effect on Profitability.
+
+```{r}
+# Aggregate the data by city and calculate the average number of transactions
+avg_transactions <- df %>% 
+  group_by(ADDRESS_CITY) %>% 
+  summarize(AVG_NUM_OF_TRANSACTIONS = mean(NUM_OF_TRANSACTIONS)) %>% 
+  arrange(desc(AVG_NUM_OF_TRANSACTIONS)) %>% 
+  top_n(10)
+
+# Create a bar plot of the top 10 cities by average number of transactions
+ggplot(avg_transactions, aes(x = ADDRESS_CITY, y = AVG_NUM_OF_TRANSACTIONS)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  xlab("City") +
+  ylab("Average number of transactions") +
+  ggtitle("Top 10 cities by average number of transactions")
+
+```
+# Customer categories
+Here we can see the quick service restaurants have the highest count of customer type. Followed by full service restaurants.
+Does the business category play a role in Swire's profitability from a customer? are restaurants (quick service or full service) always profitable? are drug stores the least profitable?
+```{r}
+ggplot(Customer, aes(x = CUSTOMER_TRADE_CHANNEL_DESCRIPTION)) +
+    geom_bar(fill="#f68060", alpha=.6, width=.6) + coord_flip() +  theme_bw() + ggtitle("Which customer category do we serve more?") + xlab("Customer Category")
+
+# Arranged plot bar
+plot_bar(Customer$CUSTOMER_TRADE_CHANNEL_DESCRIPTION, nrow = 1, ncol = 1)
+
+```
+Based on the graph, all the channels are somewhat on the same level when it comes to margin.
+```{r}
+profit_by_category <- df %>%
+  group_by(CUSTOMER_TRADE_CHANNEL_DESCRIPTION) %>%
+  summarize(TOTAL_REVENUE = sum(TOTAL_INVOICES),
+            TOTAL_COST = sum(COGS),
+            MARGIN = (TOTAL_REVENUE - TOTAL_COST) / TOTAL_REVENUE)
+
+ggplot(profit_by_category, aes(x = CUSTOMER_TRADE_CHANNEL_DESCRIPTION, y = MARGIN)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  xlab("Customer Trade Channel") +
+  ylab("Margin") +
+  ggtitle("Profitability by Customer Trade Channel") + coord_flip()
+```
+# Chi squared test between profitable and channels
+I wanted to test whether there is a significant association between two categorial variables.Based on the results, I will conclude that there is a significant association betwwen PROFITABLE and the channels.
+```{r}
+# create a contingency table of profitable and customer trade channel
+contingency_table <- df %>%
+  select(PROFITABLE, CUSTOMER_TRADE_CHANNEL_DESCRIPTION) %>%
+  group_by(PROFITABLE, CUSTOMER_TRADE_CHANNEL_DESCRIPTION) %>%
+  summarize(count = n()) %>%
+  pivot_wider(names_from = PROFITABLE, values_from = count, values_fill = 0)
+
+# conduct the chi-squared test
+chi_squared_test <- chisq.test(contingency_table[,2:3])
+
+# print the results of the chi-squared test
+chi_squared_test
+
+```
+We can see based on the graph that quick service restaurants is the most profitable channel followed by general merchandiser.
+```{r}
+# Filter the data to the top 20 most profitable cities
+top_channels <- df %>% 
+  group_by(CUSTOMER_TRADE_CHANNEL_DESCRIPTION) %>% 
+  summarize(TOTAL_PROFITABLE = sum(df$PROFITABLE)) %>% 
+  arrange(desc(TOTAL_PROFITABLE)) %>% 
+  top_n(10, TOTAL_PROFITABLE) %>% 
+  pull(CUSTOMER_TRADE_CHANNEL_DESCRIPTION)
+
+df_filtered <- df %>% 
+  filter(CUSTOMER_TRADE_CHANNEL_DESCRIPTION %in% top_channels)
+
+# Create a histogram of the profitable sales by city
+ggplot(df_filtered, aes(x = reorder(CUSTOMER_TRADE_CHANNEL_DESCRIPTION, -PROFITABLE), fill = PROFITABLE)) +
+  stat_count(position = "dodge") +
+  scale_fill_manual(values = c("blue", "red")) +
+  ylab("Channels") +
+  xlab("Profitable Count") +
+  ggtitle("Distribution of Profitable channels") +
+  scale_x_discrete(limits = rev(top_channels)) +
+  theme(axis.text.y = element_text(size = 8, angle = 0, hjust = 1)) +
+  coord_flip()
+```
+
+in here we see that Eating/Drinking channel have the highest count. Meaning that most of the business comes from restaurants.Does these activity category affect Swire's profitability in a business? is food service a key factor to profitability?
+```{r}
+ggplot(Customer, aes(x = COLD_DRINK_CHANNEL_DESCRIPTION)) +
+    geom_bar(fill="#f68060", alpha=.6, width=.6) + coord_flip() +  theme_bw() + ggtitle("Which Channel should we target?") + xlab("Channel")
+
+# Arranged plot bar
+plot_bar(Customer$COLD_DRINK_CHANNEL_DESCRIPTION, nrow = 1, ncol = 1)
+```
+
+What is DSD? and what does Business Extension mean?
+```{r}
+ggplot(Customer, aes(x = BUSINESS_TYPE_EXTENSION_DESCRIPTION)) +
+    geom_bar(fill="#f68060", alpha=.6, width=.6) + coord_flip() +  theme_bw() + ggtitle("Which business type") + xlab("Bus. Type Extension")
+```
+# Drink Calories
+Are people switching to more low calorie drinks? if so are they more inclided to plastic bottles or canned drinks?
+Here we wanted to see whether low calorie drinks have beaten regular caloric drinks because of the healthy lifestyle trend popular among younger customers. We can see here that most businesses still sell more regular calorie drinks as compared to low calorie drinks. I wanted to see if the type of drink has an effect with profitability.
+```{r}
+ggplot(Sales, aes(x = CALORIE_CAT_DESC)) +
+    geom_bar(fill="#f68060", alpha=.6, width=.6) + coord_flip() +  theme_bw() + ggtitle("Caloric Type") + xlab("Customer Caloric consumption")
+
+```
+Like the graph above, we can see that the number of transactions buying regular calorie drinks still suprass lower calorie drinks. My main question is, does this affect the target variable?
+
+```{r}
+ggplot(df, aes(x = CALORIE_CAT_DESC, y = NUM_OF_TRANSACTIONS)) +
+  geom_bar(stat = "identity") +
+  xlab("Calorie Category") +
+  ylab("Number of Transactions") +
+  ggtitle("Number of Transactions by Calorie Category")
+
+#Conduct a chi-squared test
+chisq.test(df$CALORIE_CAT_DESC, df$PROFITABLE)
+
+```
+# Beverage Categories
+Is there a demand for a specific beverage category?
+The highest demand is core sparkling drinks. Coffee and dairy/sory beverages being the lowest score when in comes to demand from businesses.Does Swire provide all the core sparkling beverage fridge or machine to every customer? Is having a machine a key factor for profitability? or is it risky because customers dont often return the machine?
+
+```{r}
+ggplot(Sales, aes(x = BEV_CAT_DESC)) +
+    geom_bar(fill="#f68060", alpha=.6, width=.6) + coord_flip() +  theme_bw() + ggtitle("Beverage demand") + xlab("Bev Categories")
+
+
+#Arranged plot bar
+plot_bar(Sales$BEV_CAT_DESC, nrow = 1, ncol = 1)
+
+```
+
+
+```{r}
+df2 <-data.frame(col1=Sales$PACK_TYPE_DESC,
+                        col2=Sales$PACK_SIZE_SALES_UNIT_DESCRIPTION)
+
+head(df2,10)
+
+```
+
+
+
+# Total number of customers sold items to
+```{r}
+NROW(Sales$CUSTOMER_NUMBER_BLINDED)
+```
+# Unique numbers of customers
+```{r}
+length(unique(Sales$CUSTOMER_NUMBER_BLINDED))
+```
+# which items ordered have the highest amount of orders? (based on physical volume)
+When it comes to physical volume orders, core sparkling is still on the top followed by bottled water.
+```{r}
+ggplot(Sales, aes(x = Sales$BEV_CAT_DESC, y = Sales$PHYSICAL_VOLUME)) +
+    geom_point(fill="#f68060", alpha=.6, width=.6) + coord_flip() +  theme_bw() + ggtitle("bev type") + xlab("physical volume based on bev cat")
+
+#When it comes to physical volume orders, core sparkling is still on the top followed by bottled water.
+```
+
+# unique number of products
+```{r}
+length(unique(Sales$PRODUCT_SOLD_BLINDED))
+```
+# Who is ordering the most? and who is ordering the least?
+```{r}
+df_order <-data.frame(col1=Sales$CUSTOMER_NUMBER_BLINDED,
+                        col2=Sales$NUM_OF_TRANSACTIONS)
+
+order_freq <- df_order %>% arrange(desc(Sales$NUM_OF_TRANSACTIONS))
+head(order_freq,10)
+```
+# Whats the average discount per order?
+```{r}
+average <- mean(Sales$DISCOUNT)
+print(average)
+
+average_vol <- mean(Sales$PHYSICAL_VOLUME)
+average_vol
+```
+# Finding out the relationship between Physical Volume and Discounts. 
+How can I find the point of diminishing returns?
+
+In this plot we can see the relationship between discounts and physical volume of orders. Higher orders mean higher discounts. Though most of Swire's customers do not need a huge amount of discount because they do not have the capacity to sell huge amounts of product.
+```{r}
+
+# Run a simple linear regression to model the relationship between discounts and physical volume
+reg_model <- lm(Sales$DISCOUNT ~ Sales$PHYSICAL_VOLUME, data = Sales)
+
+# Summarize the regression results
+summary(reg_model)
+
+# Plot the data points
+plot(Sales$DISCOUNT , Sales$PHYSICAL_VOLUME)
+
+# Add the regression line to the plot
+abline(reg_model)
+```
+# Diminishing returns of discount
+I was trying to create a diminishing returns of discount but I have yet to figure out the code for it in R. As far as the plot goes, we can see that there is a correlation between profit and discount. Though I am really interested at what percentage does the discount start to affect Swire's profitability
+```{r}
+
+# Run a linear regression to model the relationship
+Dim_returns <- lm(Sales$DISCOUNT ~ Sales$PHYSICAL_VOLUME + Sales$GROSS_PROFIT_DEAD_NET, data = Sales)
+
+# Summarize the regression results
+summary(Dim_returns)
+
+# Plot the data points
+plot(Sales$DISCOUNT , Sales$GROSS_PROFIT_DEAD_NET)
+
+# Add the regression line to the plot
+abline(Dim_returns)
+```
+# Relationship between Number of transactions and profit
+```{r}
+
+# Plot a scatter plot of the data
+plot(Sales$NUM_OF_TRANSACTIONS, Sales$GROSS_PROFIT_DEAD_NET, 
+     xlab = "Number of Transactions", ylab = "Gross Profit")
+
+# Fit a linear regression model to the data
+model1 <- lm(Sales$GROSS_PROFIT_DEAD_NET ~ Sales$NUM_OF_TRANSACTIONS, data = Sales)
+
+# Print the model summary
+summary(model1)
+
+# Plot the regression line on the scatter plot
+abline(model1, col = "red")
+
+
+```
+
+# Findings
+I am very interested in finding out what is the point of diminishing returns for Swire Coca-Cola's customers. I am interested whether smaller businesses have a faster point of diminishing returns as compared to bigger companies and whether bigger businesses tend to become profitable faster than smaller businesses. 
+
+During this EDA, I found that most of the questions I started with evolved into deeper questions regarding the factors towards a business profitability or loss for Swire. I found that though regions and customer behaviors definitely count as a factors, profitability is obtained over time and there are lots of different factors that can affect that. I want to specifically find a way to measure how long a business would churn into a profitable business.
+
+It also brought me to the question: Are there trends that are increasing sales volume in certain regions? does the top 3 region get more discounts as compared to not so popular regions? In my EDA I found that bigger companies receive bigger discounts.I also found that even if a company is small, if it has a large number of transactions per year, it could likely come out as a profitable venture. Again, I find myself asking how to get the initial investment number that Swire has invested into individual businesses. If there is a number, how long does it take for Swire to break-even and start making profit?
+
+I will explore ways to calculate the amount of time it takes for a customer to become profitable. Though I believe that Profitable is still a good target variable, I believe that it may change once I understand how to find the time frame of profitability. Overall this EDA has been useful in understanding my target variable and the predictors that I could use in order to predict customer churn. 
